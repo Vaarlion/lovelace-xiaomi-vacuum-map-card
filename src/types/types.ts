@@ -75,6 +75,7 @@ export interface CardPresetConfig extends ConditionalObjectConfig {
 export interface MapSourceConfig {
     readonly camera?: string;
     readonly image?: string;
+    readonly valetudo_json?: string;
     readonly crop?: MapCroppingConfig;
 }
 
@@ -85,6 +86,7 @@ export interface CalibrationSourceConfig {
     readonly entity?: string;
     readonly attribute?: string;
     readonly calibration_points?: CalibrationPoint[];
+    readonly valetudo_json?: boolean;
 }
 
 export interface MapModeConfig {
