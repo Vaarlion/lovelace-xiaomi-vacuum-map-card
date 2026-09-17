@@ -78,6 +78,7 @@ import { MapObject } from "./model/map_objects/map-object";
 import { MousePosition } from "./model/map_objects/mouse-position";
 import { ServiceCallSchema } from "./model/map_mode/service-call-schema";
 import { HomeAssistantFixed } from "./types/fixes";
+import { fetchAndRenderValetudoMap, ValetudoRenderResult } from "./lib/valetudo-json-map-source";
 import "./polyfills/objectEntries";
 import "./polyfills/objectFromEntries";
 
@@ -150,6 +151,9 @@ export class XiaomiVacuumMapCard extends LitElement {
     private modes: MapMode[] = [];
     private shouldHandleMouseUp!: boolean;
     private lastHassUpdate!: Date;
+    private valetudoJsonCache: Record<string, ValetudoRenderResult> = {};
+    private valetudoJsonPending: Record<string, boolean> = {};
+    private valetudoJsonLastToken: Record<string, string> = {};
     public isInEditor = false;
 
     constructor() {
@@ -458,6 +462,9 @@ export class XiaomiVacuumMapCard extends LitElement {
         if (config.calibration_source?.camera) {
             return this.hass.states[config.map_source?.camera ?? ""]?.attributes["calibration_points"];
         }
+        if (config.calibration_source?.valetudo_json && config.map_source.valetudo_json) {
+            return this.valetudoJsonCache[config.map_source.valetudo_json]?.calibrationPoints;
+        }
         if (config.calibration_source?.platform) {
             return PlatformGenerator.getCalibration(config.calibration_source.platform);
         }
@@ -610,7 +617,44 @@ export class XiaomiVacuumMapCard extends LitElement {
         this.coordinatesConverter = new CoordinatesConverter(calibrationPoints);
     }
 
+    private _ensureValetudoJsonRendered(config: CardPresetConfig): void {
+        const entityId = config.map_source.valetudo_json;
+        if (!entityId || !this.hass) {
+            return;
+        }
+        const state = this.hass.states[entityId];
+        const currentToken = state?.attributes?.["entity_picture"] as string | undefined;
+        if (!currentToken) {
+            return;
+        }
+        if (this.valetudoJsonLastToken[entityId] === currentToken) {
+            return;
+        }
+        if (this.valetudoJsonPending[entityId]) {
+            return;
+        }
+        this.valetudoJsonPending[entityId] = true;
+        fetchAndRenderValetudoMap(this.hass, entityId)
+            .then(result => {
+                this.valetudoJsonCache[entityId] = result;
+                this.valetudoJsonLastToken[entityId] = currentToken;
+                this.requestUpdate();
+            })
+            .catch(e => {
+                console.warn(`[xiaomi-vacuum-map-card] Failed to render Valetudo map for ${entityId}:`, e);
+                // Avoid hammering a broken/incompatible entity with a fetch on every state change.
+                this.valetudoJsonLastToken[entityId] = currentToken;
+            })
+            .finally(() => {
+                this.valetudoJsonPending[entityId] = false;
+            });
+    }
+
     private _getMapSrc(config: CardPresetConfig): string {
+        if (config.map_source.valetudo_json) {
+            this._ensureValetudoJsonRendered(config);
+            return this.valetudoJsonCache[config.map_source.valetudo_json]?.dataUrl ?? DISCONNECTED_IMAGE;
+        }
         if (config.map_source.camera) {
             if (
                 this.connected &&
@@ -981,10 +1025,11 @@ export class XiaomiVacuumMapCard extends LitElement {
 
     private _getRoomsConfig(): RoomConfigEventData | undefined {
         const config = this._getCurrentPreset();
-        const rooms = this.hass.states[config.map_source?.camera ?? ""]?.attributes["rooms"] as Record<
-            string,
-            MapExtractorRoom
-        >;
+        const rooms = (
+            config.map_source.valetudo_json
+                ? this.valetudoJsonCache[config.map_source.valetudo_json]?.rooms
+                : this.hass.states[config.map_source?.camera ?? ""]?.attributes["rooms"]
+        ) as Record<string, MapExtractorRoom>;
         const roomsConfig = new Array<RoomConfig>();
         if (rooms) {
             const mode = this.modes.filter(m => m.selectionType === SelectionType.ROOM).reverse()[0];
