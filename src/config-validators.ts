@@ -24,10 +24,11 @@ import { PlatformGenerator } from "./model/generators/platform-generator";
 import { HomeAssistantFixed } from "./types/fixes";
 
 function validateMapSource(mapSource: MapSourceConfig): TranslatableString[] {
-    if (!mapSource.camera && !mapSource.image) {
+    const providedCount = [mapSource.camera, mapSource.image, mapSource.valetudo_json].filter(v => !!v).length;
+    if (providedCount === 0) {
         return ["validation.preset.map_source.none_provided"];
     }
-    if (mapSource.camera && mapSource.image) {
+    if (providedCount > 1) {
         return ["validation.preset.map_source.ambiguous"];
     }
     return [];
