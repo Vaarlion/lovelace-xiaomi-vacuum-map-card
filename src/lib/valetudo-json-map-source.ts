@@ -73,7 +73,6 @@ export interface ValetudoRenderOptions {
     wallColor?: string;
     segmentColors?: string[];
     pathColor?: string;
-    backgroundColor?: string;
     scale?: number;
     layers?: ValetudoOverlayLayer[];
 }
@@ -114,7 +113,6 @@ const DEFAULT_OPTIONS: Required<ValetudoRenderOptions> = {
     wallColor: "#7B90A0",
     segmentColors: ["#19A1A1", "#7AC037", "#DF5618", "#F9A825", "#7D5BA6", "#4285F4", "#E91E63", "#00897B"],
     pathColor: "rgba(255,255,255,0.9)",
-    backgroundColor: "#15171B",
     scale: 3,
     layers: VALETUDO_DEFAULT_OVERLAY_LAYERS,
 };
@@ -323,10 +321,8 @@ export function renderValetudoMap(
     canvas.width = gridWidth * opts.scale;
     canvas.height = gridHeight * opts.scale;
     const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+    // No background fill: the transparent canvas lets the card's themed zoomer background show through.
     ctx.imageSmoothingEnabled = false;
-
-    ctx.fillStyle = opts.backgroundColor;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     const paintPixels = (pixels: number[] | undefined, color: string) => {
         if (!pixels || pixels.length === 0) {
