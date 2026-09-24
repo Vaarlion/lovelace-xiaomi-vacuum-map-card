@@ -76,6 +76,7 @@ export interface MapSourceConfig {
     readonly camera?: string;
     readonly image?: string;
     readonly valetudo_json?: string;
+    readonly valetudo_json_layers?: string[];
     readonly crop?: MapCroppingConfig;
 }
 

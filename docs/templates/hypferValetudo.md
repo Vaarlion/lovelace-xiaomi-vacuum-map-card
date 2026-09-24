@@ -65,6 +65,7 @@ internal_variables:
 In this mode:
 * room cleaning (`vacuum_clean_segment`) is added to the default map modes, with rooms taken live from the map; a `vacuum_clean_segment` mode configured without `predefined_selections` is filled the same way,
 * the robot, dock and go-to target are drawn as icons (see `--map-card-valetudo-*` [CSS variables](/docs/css_variables.md)),
+* no-go areas, no-mop areas, virtual walls and the zone being cleaned are drawn by default; carpets can be added, and any of them removed, with `map_source.valetudo_json_layers`,
 * the map is refreshed every 3 s while cleaning or returning, 15 s while paused and 2 min otherwise.
 
 The visual editor configures it too: pick the map camera with the Hypfer/Valetudo platform selected and fill in the MQTT topic prefix.

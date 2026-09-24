@@ -51,6 +51,23 @@ export interface ValetudoRawMapData {
     entities: ValetudoRawMapEntity[];
 }
 
+export type ValetudoOverlayLayer = "no_go_area" | "no_mop_area" | "virtual_wall" | "active_zone" | "carpet";
+
+export const VALETUDO_OVERLAY_LAYERS: ValetudoOverlayLayer[] = [
+    "no_go_area",
+    "no_mop_area",
+    "virtual_wall",
+    "active_zone",
+    "carpet",
+];
+
+export const VALETUDO_DEFAULT_OVERLAY_LAYERS: ValetudoOverlayLayer[] = [
+    "no_go_area",
+    "no_mop_area",
+    "virtual_wall",
+    "active_zone",
+];
+
 export interface ValetudoRenderOptions {
     floorColor?: string;
     wallColor?: string;
@@ -58,7 +75,16 @@ export interface ValetudoRenderOptions {
     pathColor?: string;
     backgroundColor?: string;
     scale?: number;
+    layers?: ValetudoOverlayLayer[];
 }
+
+const AREA_STYLES: Record<"no_go_area" | "no_mop_area" | "active_zone", { fill: string; stroke: string }> = {
+    no_go_area: { fill: "rgba(255, 62, 62, 0.35)", stroke: "#FF3E3E" },
+    no_mop_area: { fill: "rgba(166, 110, 255, 0.35)", stroke: "#A66EFF" },
+    active_zone: { fill: "rgba(64, 220, 120, 0.25)", stroke: "#40DC78" },
+};
+const VIRTUAL_WALL_COLOR = "#FF3E3E";
+const CARPET_HATCH_COLOR = "rgba(255, 255, 255, 0.35)";
 
 /** Position in vacuum coordinates (mm), the same system as the calibration points. */
 export interface ValetudoMarker {
@@ -90,6 +116,7 @@ const DEFAULT_OPTIONS: Required<ValetudoRenderOptions> = {
     pathColor: "rgba(255,255,255,0.9)",
     backgroundColor: "#15171B",
     scale: 3,
+    layers: VALETUDO_DEFAULT_OVERLAY_LAYERS,
 };
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -284,7 +311,7 @@ export function renderValetudoMap(
     data: ValetudoRawMapData,
     options?: ValetudoRenderOptions,
 ): ValetudoRenderResult {
-    const opts = { ...DEFAULT_OPTIONS, ...options };
+    const opts = { ...DEFAULT_OPTIONS, ...options, layers: options?.layers ?? DEFAULT_OPTIONS.layers };
     const box = computeBoundingBox(data);
     const padding = 2;
     const gridWidth = box.maxX - box.minX + 1 + padding * 2;
@@ -337,29 +364,74 @@ export function renderValetudoMap(
         };
     });
 
-    data.layers.filter(l => l.type === "wall").forEach(l => paintPixels(l.pixels, opts.wallColor));
-
     // Grid coordinates are pixelSize mm each; entity point coordinates are already in mm.
     const toGrid = (mmX: number, mmY: number): [number, number] => [
         (mmX / data.pixelSize - offsetX) * opts.scale,
         (mmY / data.pixelSize - offsetY) * opts.scale,
     ];
+    const tracePoints = (points: number[]): void => {
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i += 2) {
+            const [x, y] = toGrid(points[i], points[i + 1]);
+            if (i === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        }
+    };
+    const enabledEntities = (type: ValetudoOverlayLayer): ValetudoRawMapEntity[] =>
+        opts.layers.includes(type) ? data.entities.filter(e => e.type === type) : [];
+    const thinLine = Math.max(1, opts.scale / 2);
+    ctx.lineJoin = "round";
+
+    // Carpets sit on the floor, under the walls.
+    const carpets = enabledEntities("carpet");
+    if (carpets.length > 0) {
+        const tile = document.createElement("canvas");
+        tile.width = tile.height = opts.scale * 3;
+        const tileCtx = tile.getContext("2d") as CanvasRenderingContext2D;
+        tileCtx.strokeStyle = CARPET_HATCH_COLOR;
+        tileCtx.beginPath();
+        tileCtx.moveTo(0, tile.height);
+        tileCtx.lineTo(tile.width, 0);
+        tileCtx.stroke();
+        ctx.fillStyle = ctx.createPattern(tile, "repeat") ?? CARPET_HATCH_COLOR;
+        carpets.forEach(carpet => {
+            tracePoints(carpet.points);
+            ctx.closePath();
+            ctx.fill();
+        });
+    }
+
+    data.layers.filter(l => l.type === "wall").forEach(l => paintPixels(l.pixels, opts.wallColor));
+
+    (["active_zone", "no_mop_area", "no_go_area"] as const).forEach(type => {
+        enabledEntities(type).forEach(area => {
+            tracePoints(area.points);
+            ctx.closePath();
+            ctx.fillStyle = AREA_STYLES[type].fill;
+            ctx.fill();
+            ctx.strokeStyle = AREA_STYLES[type].stroke;
+            ctx.lineWidth = thinLine;
+            ctx.stroke();
+        });
+    });
+
+    ctx.strokeStyle = VIRTUAL_WALL_COLOR;
+    ctx.lineWidth = opts.scale;
+    ctx.lineCap = "round";
+    enabledEntities("virtual_wall").forEach(wall => {
+        tracePoints(wall.points);
+        ctx.stroke();
+    });
 
     ctx.strokeStyle = opts.pathColor;
-    ctx.lineWidth = Math.max(1, opts.scale / 2);
-    ctx.lineJoin = "round";
+    ctx.lineWidth = thinLine;
     data.entities
         .filter(e => e.type === "path" || e.type === "predicted_path")
         .forEach(path => {
-            ctx.beginPath();
-            for (let i = 0; i < path.points.length; i += 2) {
-                const [x, y] = toGrid(path.points[i], path.points[i + 1]);
-                if (i === 0) {
-                    ctx.moveTo(x, y);
-                } else {
-                    ctx.lineTo(x, y);
-                }
-            }
+            tracePoints(path.points);
             ctx.stroke();
         });
 

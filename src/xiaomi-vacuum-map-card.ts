@@ -83,7 +83,9 @@ import { HomeAssistantFixed } from "./types/fixes";
 import {
     fetchValetudoMap,
     renderValetudoMap,
+    VALETUDO_OVERLAY_LAYERS,
     ValetudoMarker,
+    ValetudoOverlayLayer,
     ValetudoRenderResult,
 } from "./lib/valetudo-json-map-source";
 import { ValetudoMarkerIcon, ValetudoMarkerKind } from "./model/map_objects/valetudo-marker-icon";
@@ -166,6 +168,7 @@ export class XiaomiVacuumMapCard extends LitElement {
     private valetudoJsonLastVacuumState: Record<string, string | undefined> = {};
     private valetudoJsonPollTimer?: number;
     private valetudoJsonRoomsKey?: string;
+    private valetudoJsonLayersKey: Record<string, string> = {};
     public isInEditor = false;
 
     constructor() {
@@ -670,9 +673,14 @@ export class XiaomiVacuumMapCard extends LitElement {
         }
         const vacuumState = this.hass.states[config.entity]?.state;
         const interval = VALETUDO_JSON_POLL_INTERVALS[vacuumState] ?? VALETUDO_JSON_DEFAULT_POLL_INTERVAL;
+        const layers = config.map_source.valetudo_json_layers
+            ?.filter((l): l is ValetudoOverlayLayer => (VALETUDO_OVERLAY_LAYERS as string[]).includes(l));
+        const layersKey = JSON.stringify(layers ?? null);
+        const layersChanged = layersKey !== this.valetudoJsonLayersKey[entityId];
         const now = Date.now();
         const due =
             !this.valetudoJsonCache[entityId] ||
+            layersChanged ||
             vacuumState !== this.valetudoJsonLastVacuumState[entityId] ||
             now - (this.valetudoJsonLastPoll[entityId] ?? 0) >= interval;
         if (!due) {
@@ -681,11 +689,13 @@ export class XiaomiVacuumMapCard extends LitElement {
         this.valetudoJsonPending[entityId] = true;
         this.valetudoJsonLastPoll[entityId] = now;
         this.valetudoJsonLastVacuumState[entityId] = vacuumState;
-        fetchValetudoMap(this.hass, entityId, this.valetudoJsonFingerprint[entityId])
+        const previousFingerprint = layersChanged ? undefined : this.valetudoJsonFingerprint[entityId];
+        fetchValetudoMap(this.hass, entityId, previousFingerprint)
             .then(snapshot => {
                 this.valetudoJsonFingerprint[entityId] = snapshot.fingerprint;
                 if (snapshot.data) {
-                    this.valetudoJsonCache[entityId] = renderValetudoMap(snapshot.data);
+                    this.valetudoJsonCache[entityId] = renderValetudoMap(snapshot.data, { layers });
+                    this.valetudoJsonLayersKey[entityId] = layersKey;
                     this._applyValetudoRooms();
                     this.requestUpdate();
                 }
