@@ -64,10 +64,15 @@ export interface ValetudoRenderOptions {
 }
 
 export interface ValetudoRenderResult {
-    nonce: string;
     dataUrl: string;
     calibrationPoints: CalibrationPoint[];
     rooms: Record<string, MapExtractorRoom>;
+}
+
+export interface ValetudoMapSnapshot {
+    fingerprint: string;
+    /** Undefined when the map is unchanged since the fingerprint passed to fetchValetudoMap(). */
+    data?: ValetudoRawMapData;
 }
 
 const DEFAULT_OPTIONS: Required<ValetudoRenderOptions> = {
@@ -124,12 +129,26 @@ export function extractCompressedTextChunks(buffer: ArrayBuffer): { keyword: str
     return chunks;
 }
 
-export function parseValetudoMapFromPng(buffer: ArrayBuffer): ValetudoRawMapData {
+function extractValetudoMapChunk(buffer: ArrayBuffer): Uint8Array {
     const chunk = extractCompressedTextChunks(buffer).find(c => c.keyword === "ValetudoMap");
     if (!chunk) {
         throw new Error("No embedded Valetudo map data found in camera image");
     }
-    const inflated = pako.inflate(chunk.data);
+    return chunk.data;
+}
+
+// FNV-1a over the still-compressed chunk: an unchanged map skips inflate + render entirely.
+function fingerprint(bytes: Uint8Array): string {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < bytes.length; i++) {
+        hash ^= bytes[i];
+        hash = Math.imul(hash, 0x01000193);
+    }
+    return `${bytes.length}:${(hash >>> 0).toString(16)}`;
+}
+
+function parseValetudoMapChunk(compressed: Uint8Array): ValetudoRawMapData {
+    const inflated = pako.inflate(compressed);
     const json = new TextDecoder("utf-8").decode(inflated);
     const data = JSON.parse(json) as ValetudoRawMapData;
     // Map format v2 may RLE-encode pixel arrays as repeated [xStart, y, count] triples.
@@ -307,17 +326,15 @@ export function renderValetudoMap(
 }
 
 /**
- * Fetches a Valetudo camera entity's current snapshot, extracts the
- * embedded map JSON and renders it. This is the same technique used by
- * Hypfer/lovelace-valetudo-map-card - a plain HTTP GET of a small PNG,
- * decoded in the browser. No permanent server-side rendering
- * process/video encoder is involved.
+ * Fetches a Valetudo camera entity's current snapshot and extracts the
+ * embedded map JSON - a plain HTTP GET of a small PNG, decoded in the
+ * browser, same technique as Hypfer/lovelace-valetudo-map-card.
  */
-export async function fetchAndRenderValetudoMap(
+export async function fetchValetudoMap(
     hass: HomeAssistantFixed,
     cameraEntityId: string,
-    options?: ValetudoRenderOptions,
-): Promise<ValetudoRenderResult> {
+    previousFingerprint?: string,
+): Promise<ValetudoMapSnapshot> {
     const state = hass.states[cameraEntityId];
     if (!state) {
         throw new Error(`Entity not found: ${cameraEntityId}`);
@@ -335,11 +352,10 @@ export async function fetchAndRenderValetudoMap(
     if (!response.ok) {
         throw new Error(`Failed to fetch camera image: ${response.status} ${response.statusText}`);
     }
-    const buffer = await response.arrayBuffer();
-    const mapData = parseValetudoMapFromPng(buffer);
-    const rendered = renderValetudoMap(mapData, options);
-    return {
-        nonce: mapData.metaData?.nonce ?? picturePath,
-        ...rendered,
-    };
+    const chunk = extractValetudoMapChunk(await response.arrayBuffer());
+    const currentFingerprint = fingerprint(chunk);
+    if (currentFingerprint === previousFingerprint) {
+        return { fingerprint: currentFingerprint };
+    }
+    return { fingerprint: currentFingerprint, data: parseValetudoMapChunk(chunk) };
 }
