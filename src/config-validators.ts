@@ -246,7 +246,7 @@ function validatePreset(config: CardPresetConfig, nameRequired: boolean, languag
         ["map_source", "validation.preset.map_source.missing"],
     ]);
     const vacuumPlatform = PlatformGenerator.getPlatformName(config.vacuum_platform);
-    if (!platformsWithDefaultCalibration.includes(vacuumPlatform)) {
+    if (!platformsWithDefaultCalibration.includes(vacuumPlatform) && !config.map_source?.valetudo_json) {
         mandatoryFields.set("calibration_source", "validation.preset.calibration_source.missing");
     }
     const params = Object.keys(config);

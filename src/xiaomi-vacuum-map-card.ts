@@ -476,7 +476,7 @@ export class XiaomiVacuumMapCard extends LitElement {
         if (config.calibration_source?.camera) {
             return this.hass.states[config.map_source?.camera ?? ""]?.attributes["calibration_points"];
         }
-        if (config.calibration_source?.valetudo_json && config.map_source.valetudo_json) {
+        if (config.map_source.valetudo_json && (!config.calibration_source || config.calibration_source.valetudo_json)) {
             return this.valetudoJsonCache[config.map_source.valetudo_json]?.calibrationPoints;
         }
         if (config.calibration_source?.platform) {
