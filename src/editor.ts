@@ -20,6 +20,7 @@ import {
 import { conditional, copyMessage, getAllEntitiesFromTheSameDevice } from "./utils";
 import { ToastRenderer } from "./renderers/toast-renderer";
 import { HomeAssistantFixed } from "./types/fixes";
+import { VALETUDO_DEFAULT_OVERLAY_LAYERS, VALETUDO_OVERLAY_LAYERS } from "./lib/valetudo-json-map-source";
 
 @customElement(EDITOR_CUSTOM_ELEMENT_NAME)
 export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<LovelaceCardEditor, "hass"> {
@@ -55,6 +56,10 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
 
     get _valetudo_json(): boolean {
         return !!this._config?.map_source?.valetudo_json;
+    }
+
+    get _valetudo_json_layers(): string[] {
+        return this._config?.map_source?.valetudo_json_layers ?? VALETUDO_DEFAULT_OVERLAY_LAYERS;
     }
 
     get _mqtt_topic(): string {
@@ -192,6 +197,22 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
                                 .checked="${this._valetudo_json}"
                                 @change="${this._valetudoJsonChanged}"></ha-switch>
                         </ha-formfield>
+                    </div>
+                `)}
+                ${conditional(this._valetudo_json, () => html`
+                    <div class="values">
+                        <p>${this._localize("editor.label.valetudo_json_layers")}</p>
+                        <div class="layer-switches">
+                            ${VALETUDO_OVERLAY_LAYERS.map(layer => html`
+                                <ha-formfield class="switch-wrapper"
+                                              .label="${this._localize(`editor.label.valetudo_json_layer.${layer}`)}">
+                                    <ha-switch
+                                        .checked="${this._valetudo_json_layers.includes(layer)}"
+                                        @change="${ev => this._valetudoJsonLayerChanged(layer, ev.target.checked)}">
+                                    </ha-switch>
+                                </ha-formfield>
+                            `)}
+                        </div>
                     </div>
                 `)}
                 ${conditional(this._is_hypfer, () => html`
@@ -408,7 +429,8 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
         const tmpConfig = { ...config };
         if (valetudoJson) {
             // The rendered Valetudo map carries its own calibration; any other source would be wrong for it.
-            tmpConfig["map_source"] = { valetudo_json: camera };
+            const layers = config.map_source?.valetudo_json_layers;
+            tmpConfig["map_source"] = { valetudo_json: camera, ...(layers ? { valetudo_json_layers: layers } : {}) };
             delete tmpConfig["calibration_source"];
             return tmpConfig;
         }
@@ -423,6 +445,23 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
             tmpConfig["calibration_source"] = { camera: true };
         }
         return tmpConfig;
+    }
+
+    private _valetudoJsonLayerChanged(layer: string, enabled: boolean): void {
+        if (!this._config?.map_source?.valetudo_json) {
+            return;
+        }
+        const current = this._valetudo_json_layers;
+        const layers = VALETUDO_OVERLAY_LAYERS.filter(l => (l === layer ? enabled : current.includes(l)));
+        const isDefault =
+            layers.length === VALETUDO_DEFAULT_OVERLAY_LAYERS.length &&
+            layers.every(l => VALETUDO_DEFAULT_OVERLAY_LAYERS.includes(l));
+        const mapSource = { ...this._config.map_source, valetudo_json_layers: layers };
+        if (isDefault) {
+            delete (mapSource as Record<string, unknown>)["valetudo_json_layers"];
+        }
+        this._config = { ...this._config, map_source: mapSource };
+        fireEvent(this, "config-changed", { config: this._config });
     }
 
     private _mqttTopicChanged(ev): void {
@@ -512,6 +551,11 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
 
             .switch-wrapper {
                 padding: 8px;
+            }
+
+            .layer-switches {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             }
 
             .selection-controls-wrapper {
