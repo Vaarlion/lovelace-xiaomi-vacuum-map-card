@@ -272,6 +272,8 @@
             "name": "Title (optional)",
             "entity": "Vacuum entity (required)",
             "camera": "Camera entity (required)",
+            "valetudo_json": "Render map from Valetudo map data (optional)",
+            "mqtt_topic": "Valetudo MQTT topic prefix (required)",
             "vacuum_platform": "Vacuum platform (required)",
             "map_locked": "Map locked (optional)",
             "two_finger_pan": "Two finger pan (optional)",

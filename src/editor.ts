@@ -50,7 +50,19 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
     }
 
     get _camera(): string {
-        return this._config?.map_source?.camera || "";
+        return this._config?.map_source?.camera || this._config?.map_source?.valetudo_json || "";
+    }
+
+    get _valetudo_json(): boolean {
+        return !!this._config?.map_source?.valetudo_json;
+    }
+
+    get _mqtt_topic(): string {
+        return (this._config?.internal_variables?.["topic"] as string | undefined) ?? "";
+    }
+
+    get _is_hypfer(): boolean {
+        return this._vacuum_platform === PlatformGenerator.HYPFER_VALETUDO_PLATFORM;
     }
 
     get _map_locked(): boolean {
@@ -115,7 +127,7 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
         const vacuums = entityIds.filter(e => e.substr(0, e.indexOf(".")) === "vacuum");
         const platforms = PlatformGenerator.getPlatforms();
         const roomsUnavailable =
-            this.hass.states[this._camera]?.attributes?.["rooms"] === undefined ||
+            (!this._valetudo_json && this.hass.states[this._camera]?.attributes?.["rooms"] === undefined) ||
             PlatformGenerator.getRoomsTemplate(this._vacuum_platform) === undefined;
 
         return html`
@@ -177,6 +189,24 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
                         .options="${cameras}"
                     ></ha-select>
                 </div>
+                ${conditional(this._is_hypfer || this._valetudo_json, () => html`
+                    <div class="values">
+                        <ha-formfield class="switch-wrapper" .label="${this._localize("editor.label.valetudo_json")}">
+                            <ha-switch
+                                .checked="${this._valetudo_json}"
+                                @change="${this._valetudoJsonChanged}"></ha-switch>
+                        </ha-formfield>
+                    </div>
+                `)}
+                ${conditional(this._is_hypfer, () => html`
+                    <div class="values">
+                        <ha-textfield
+                            label="${this._localize("editor.label.mqtt_topic")}"
+                            placeholder="valetudo/robot"
+                            .value="${this._mqtt_topic}"
+                            @input="${this._mqttTopicChanged}"></ha-textfield>
+                    </div>
+                `)}
                 <div class="values">
                     <ha-formfield class="switch-wrapper" .label="${this._localize("editor.label.map_locked")}">
                         <ha-switch
@@ -342,13 +372,61 @@ export class XiaomiVacuumMapCardEditor extends LitElement implements Omit<Lovela
         }
         const value = ev.detail?.value ?? ev.target.value;
         if (this._camera === value) return;
-        const tmpConfig = { ...this._config };
-        tmpConfig["map_source"] = { camera: value };
-        if (!PlatformGenerator.getCalibration(this._config.vacuum_platform)
+        // Valetudo's MQTT camera is the only map Hypfer/Valetudo exposes, and it never has calibration_points.
+        const valetudoJson = this._valetudo_json
+            || (this._is_hypfer && !("calibration_points" in this.hass.states[value].attributes));
+        this._config = this._withMapSource(this._config, value, valetudoJson);
+        fireEvent(this, "config-changed", { config: this._config });
+    }
+
+    private _valetudoJsonChanged(ev): void {
+        if (!this._config || !this.hass || !this._camera) {
+            return;
+        }
+        this._config = this._withMapSource(this._config, this._camera, ev.target.checked);
+        fireEvent(this, "config-changed", { config: this._config });
+    }
+
+    private _withMapSource(
+        config: XiaomiVacuumMapCardConfig,
+        camera: string,
+        valetudoJson: boolean,
+    ): XiaomiVacuumMapCardConfig {
+        const tmpConfig = { ...config };
+        if (valetudoJson) {
+            // The rendered Valetudo map carries its own calibration; any other source would be wrong for it.
+            tmpConfig["map_source"] = { valetudo_json: camera };
+            delete tmpConfig["calibration_source"];
+            return tmpConfig;
+        }
+        tmpConfig["map_source"] = { camera: camera };
+        if (tmpConfig["calibration_source"]?.valetudo_json) {
+            delete tmpConfig["calibration_source"];
+        }
+        if (!PlatformGenerator.getCalibration(tmpConfig.vacuum_platform)
             && !tmpConfig["calibration_source"]
-            && "calibration_points" in this.hass.states[value].attributes
+            && "calibration_points" in (this.hass?.states[camera]?.attributes ?? {})
         ) {
             tmpConfig["calibration_source"] = { camera: true };
+        }
+        return tmpConfig;
+    }
+
+    private _mqttTopicChanged(ev): void {
+        if (!this._config) {
+            return;
+        }
+        const topic = (ev.target.value as string).trim().replace(/\/+$/, "");
+        if (topic === this._mqtt_topic) return;
+        const internalVariables = { ...(this._config.internal_variables ?? {}) };
+        if (topic) {
+            internalVariables["topic"] = topic;
+        } else {
+            delete internalVariables["topic"];
+        }
+        const tmpConfig = { ...this._config, internal_variables: internalVariables };
+        if (Object.keys(internalVariables).length === 0) {
+            delete (tmpConfig as Record<string, unknown>)["internal_variables"];
         }
         this._config = tmpConfig;
         fireEvent(this, "config-changed", { config: this._config });

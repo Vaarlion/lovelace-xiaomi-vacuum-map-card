@@ -273,6 +273,8 @@
             "name": "Titre (optionnel)",
             "entity": "Entité de l'aspirateur (obligatoire)",
             "camera": "Entité de la caméra (obligatoire)",
+            "valetudo_json": "Générer la carte depuis les données Valetudo (optionnel)",
+            "mqtt_topic": "Préfixe du topic MQTT Valetudo (obligatoire)",
             "vacuum_platform": "Plateforme (obligatoire)",
             "map_locked": "Carte verrouillée (optionnel)",
             "two_finger_pan": "Déplacement à deux doigts (optionnel)"
