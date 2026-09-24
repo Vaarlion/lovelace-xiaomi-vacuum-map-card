@@ -195,6 +195,73 @@ function computeBoundingBox(data: ValetudoRawMapData): BoundingBox {
     return box;
 }
 
+/**
+ * Returns the outer boundary of a set of grid pixels as a polygon of pixel-corner
+ * coordinates. Each exposed pixel side becomes a directed edge (clockwise with y
+ * pointing down), edges are chained into closed loops, and the loop enclosing the
+ * largest area is kept: that is the outer outline. Holes (furniture) are dropped,
+ * so a click anywhere inside the room selects it.
+ */
+export function traceOutline(pixels: number[]): [number, number][] {
+    const KEY_STRIDE = 1 << 16;
+    const key = (x: number, y: number): number => y * KEY_STRIDE + x;
+    const filled = new Set<number>();
+    for (let i = 0; i < pixels.length; i += 2) {
+        filled.add(key(pixels[i], pixels[i + 1]));
+    }
+
+    const outgoing = new Map<number, number[]>();
+    const addEdge = (x1: number, y1: number, x2: number, y2: number): void => {
+        const from = key(x1, y1);
+        const list = outgoing.get(from);
+        if (list) {
+            list.push(key(x2, y2));
+        } else {
+            outgoing.set(from, [key(x2, y2)]);
+        }
+    };
+    for (let i = 0; i < pixels.length; i += 2) {
+        const x = pixels[i];
+        const y = pixels[i + 1];
+        if (!filled.has(key(x, y - 1))) addEdge(x, y, x + 1, y);
+        if (!filled.has(key(x + 1, y))) addEdge(x + 1, y, x + 1, y + 1);
+        if (!filled.has(key(x, y + 1))) addEdge(x + 1, y + 1, x, y + 1);
+        if (!filled.has(key(x - 1, y))) addEdge(x, y + 1, x, y);
+    }
+
+    let best: [number, number][] = [];
+    let bestArea = 0;
+    outgoing.forEach((_, start) => {
+        while ((outgoing.get(start)?.length ?? 0) > 0) {
+            const loop: [number, number][] = [];
+            let current = start;
+            let next: number | undefined;
+            while ((next = outgoing.get(current)?.pop()) !== undefined) {
+                loop.push([current % KEY_STRIDE, Math.floor(current / KEY_STRIDE)]);
+                current = next;
+                if (current === start) break;
+            }
+            let area = 0;
+            for (let i = 0; i < loop.length; i++) {
+                const [x1, y1] = loop[i];
+                const [x2, y2] = loop[(i + 1) % loop.length];
+                area += x1 * y2 - x2 * y1;
+            }
+            if (Math.abs(area) > bestArea) {
+                bestArea = Math.abs(area);
+                best = loop;
+            }
+        }
+    });
+
+    // Drop vertices in the middle of straight runs.
+    return best.filter((point, i) => {
+        const prev = best[(i + best.length - 1) % best.length];
+        const next = best[(i + 1) % best.length];
+        return (point[0] - prev[0]) * (next[1] - point[1]) !== (point[1] - prev[1]) * (next[0] - point[0]);
+    });
+}
+
 function findMarker(data: ValetudoRawMapData, type: string): ValetudoMarker | undefined {
     const entity = data.entities.find(e => e.type === type);
     if (!entity || entity.points.length < 2) {
@@ -252,16 +319,19 @@ export function renderValetudoMap(
         const color = opts.segmentColors[i % opts.segmentColors.length];
         paintPixels(l.pixels, color);
         const segmentId = l.metaData.segmentId ?? String(i + 1);
+        // Pixel (px, py) spans [px, px + 1] in grid units, i.e. [px, px + 1] * pixelSize mm.
+        const center = (d: { min: number; max: number; mid?: number; avg?: number }): number =>
+            ((d.avg ?? d.mid ?? (d.min + d.max) / 2) + 0.5) * data.pixelSize;
         rooms[segmentId] = {
             name: l.metaData.name,
             icon: undefined,
-            x: undefined,
-            y: undefined,
+            x: center(l.dimensions.x),
+            y: center(l.dimensions.y),
             x0: l.dimensions.x.min * data.pixelSize,
             y0: l.dimensions.y.min * data.pixelSize,
-            x1: l.dimensions.x.max * data.pixelSize,
-            y1: l.dimensions.y.max * data.pixelSize,
-            outline: undefined,
+            x1: (l.dimensions.x.max + 1) * data.pixelSize,
+            y1: (l.dimensions.y.max + 1) * data.pixelSize,
+            outline: traceOutline(l.pixels).map(([x, y]) => [x * data.pixelSize, y * data.pixelSize]),
         };
     });
 

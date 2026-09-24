@@ -165,6 +165,7 @@ export class XiaomiVacuumMapCard extends LitElement {
     private valetudoJsonLastPoll: Record<string, number> = {};
     private valetudoJsonLastVacuumState: Record<string, string | undefined> = {};
     private valetudoJsonPollTimer?: number;
+    private valetudoJsonRoomsKey?: string;
     public isInEditor = false;
 
     constructor() {
@@ -568,6 +569,8 @@ export class XiaomiVacuumMapCard extends LitElement {
         this.presetIndex = index;
         this.currentPreset = config;
         this.internalVariables = this._getInternalVariables(config);
+        this.valetudoJsonRoomsKey = undefined;
+        this._applyValetudoRooms();
 
         this._getIconsAndTiles(config, this.internalVariables)
             .then(([icons, tiles]) => this._setPreset({ ...config, tiles: tiles, icons: icons }))
@@ -603,11 +606,37 @@ export class XiaomiVacuumMapCard extends LitElement {
 
     private _getModes(config: CardPresetConfig) {
         const vacuumPlatform = PlatformGenerator.getPlatformName(config.vacuum_platform);
-        return (
-            (config.map_modes?.length ?? -1) === -1 || vacuumPlatform.startsWith("Setup")
-                ? PlatformGenerator.generateDefaultModes(vacuumPlatform)
-                : config.map_modes ?? [EMPTY_MAP_MODE]
-        ).map(m => new MapMode(vacuumPlatform, m, this.config.language));
+        const useDefaults = (config.map_modes?.length ?? -1) === -1 || vacuumPlatform.startsWith("Setup");
+        const modes = useDefaults
+            ? PlatformGenerator.generateDefaultModes(vacuumPlatform)
+            : config.map_modes ?? [EMPTY_MAP_MODE];
+        const roomsTemplate = PlatformGenerator.getRoomsTemplate(vacuumPlatform);
+        // Rooms come live from the Valetudo map, so the rooms mode can be offered without any static config.
+        if (useDefaults && config.map_source.valetudo_json && roomsTemplate
+            && !modes.some(m => m.template === roomsTemplate)) {
+            modes.push({ template: roomsTemplate });
+        }
+        return modes.map(m => new MapMode(vacuumPlatform, m, this.config.language));
+    }
+
+    private _applyValetudoRooms(): void {
+        if (!this.currentPreset?.map_source?.valetudo_json) {
+            return;
+        }
+        const rooms = this._getRoomsConfig()?.rooms;
+        const key = JSON.stringify(rooms);
+        if (!rooms || key === this.valetudoJsonRoomsKey) {
+            return;
+        }
+        this.valetudoJsonRoomsKey = key;
+        const liveRoomModes = this.modes.filter(
+            m => m.selectionType === SelectionType.ROOM && (m.config.predefined_selections?.length ?? 0) === 0,
+        );
+        liveRoomModes.forEach(m => (m.predefinedSelections = rooms));
+        // Only rebuilt when room geometry changes (rare), because it clears the current selection.
+        if (liveRoomModes.includes(this.modes[this.selectedMode])) {
+            this._setCurrentMode(this.selectedMode, false);
+        }
     }
 
     private _executePresetsActivation() {
@@ -655,6 +684,7 @@ export class XiaomiVacuumMapCard extends LitElement {
                 this.valetudoJsonFingerprint[entityId] = snapshot.fingerprint;
                 if (snapshot.data) {
                     this.valetudoJsonCache[entityId] = renderValetudoMap(snapshot.data);
+                    this._applyValetudoRooms();
                     this.requestUpdate();
                 }
             })
