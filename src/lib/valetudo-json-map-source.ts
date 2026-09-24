@@ -326,11 +326,12 @@ export async function fetchAndRenderValetudoMap(
     if (!picturePath) {
         throw new Error(`Entity ${cameraEntityId} has no entity_picture - is it a camera?`);
     }
-    const url = hass.hassUrl(picturePath);
     const fetchWithAuth = (hass as unknown as {
         fetchWithAuth?: (path: string, init?: RequestInit) => Promise<Response>;
     }).fetchWithAuth;
-    const response = fetchWithAuth ? await fetchWithAuth(url) : await fetch(url);
+    const response = fetchWithAuth
+        ? await fetchWithAuth(picturePath)
+        : await fetch(hass.hassUrl(picturePath));
     if (!response.ok) {
         throw new Error(`Failed to fetch camera image: ${response.status} ${response.statusText}`);
     }
