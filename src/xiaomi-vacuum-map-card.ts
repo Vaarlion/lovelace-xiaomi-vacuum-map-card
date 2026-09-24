@@ -80,7 +80,13 @@ import { MapObject } from "./model/map_objects/map-object";
 import { MousePosition } from "./model/map_objects/mouse-position";
 import { ServiceCallSchema } from "./model/map_mode/service-call-schema";
 import { HomeAssistantFixed } from "./types/fixes";
-import { fetchValetudoMap, renderValetudoMap, ValetudoRenderResult } from "./lib/valetudo-json-map-source";
+import {
+    fetchValetudoMap,
+    renderValetudoMap,
+    ValetudoMarker,
+    ValetudoRenderResult,
+} from "./lib/valetudo-json-map-source";
+import { ValetudoMarkerIcon, ValetudoMarkerKind } from "./model/map_objects/valetudo-marker-icon";
 import "./polyfills/objectEntries";
 import "./polyfills/objectFromEntries";
 
@@ -328,6 +334,7 @@ export class XiaomiVacuumMapCard extends LitElement {
                         @mousedown="${(e: MouseEvent): void => this._mouseDown(e)}"
                         @mousemove="${(e: MouseEvent): void => this._mouseMove(e)}"
                         @mouseup="${async (e: PointerEvent): Promise<void> => {await this._mouseUp(e)}}">
+                        ${validCalibration ? this._drawValetudoMarkers(preset) : null}
                         ${validCalibration ? this._drawSelection() : null}
                     </svg>
                 </div>
@@ -1154,6 +1161,25 @@ export class XiaomiVacuumMapCard extends LitElement {
         }
     }
 
+    private _drawValetudoMarkers(config: CardPresetConfig): SVGTemplateResult | null {
+        const rendered = config.map_source.valetudo_json
+            ? this.valetudoJsonCache[config.map_source.valetudo_json]
+            : undefined;
+        if (!rendered) {
+            return null;
+        }
+        const markers: [ValetudoMarker | undefined, ValetudoMarkerKind][] = [
+            [rendered.charger, "charger"],
+            [rendered.goToTarget, "go-to-target"],
+            [rendered.robot, "robot"],
+        ];
+        return svg`${markers
+            .filter(([marker]) => marker)
+            .map(([marker, kind]) =>
+                new ValetudoMarkerIcon(marker as ValetudoMarker, kind, this._getContext()).render(),
+            )}`;
+    }
+
     private _drawSelection(): SVGTemplateResult | null {
         switch (this._getCurrentMode()?.selectionType) {
             case SelectionType.MANUAL_RECTANGLE:
@@ -1476,6 +1502,24 @@ export class XiaomiVacuumMapCard extends LitElement {
                 --map-card-internal-predefined-point-label-font-size: var(
                     --map-card-predefined-point-label-font-size,
                     12px
+                );
+                --map-card-internal-valetudo-marker-wrapper-size: var(--map-card-valetudo-marker-wrapper-size, 32px);
+                --map-card-internal-valetudo-marker-icon-size: var(--map-card-valetudo-marker-icon-size, 22px);
+                --map-card-internal-valetudo-marker-icon-color: var(
+                    --map-card-valetudo-marker-icon-color,
+                    var(--map-card-internal-secondary-text-color)
+                );
+                --map-card-internal-valetudo-marker-background-color: var(
+                    --map-card-valetudo-marker-background-color,
+                    var(--map-card-internal-secondary-color)
+                );
+                --map-card-internal-valetudo-robot-icon-color: var(
+                    --map-card-valetudo-robot-icon-color,
+                    var(--map-card-internal-primary-text-color)
+                );
+                --map-card-internal-valetudo-robot-background-color: var(
+                    --map-card-valetudo-robot-background-color,
+                    var(--map-card-internal-primary-color)
                 );
                 --map-card-internal-manual-point-radius: var(--map-card-manual-point-radius, 5px);
                 --map-card-internal-manual-point-line-color: var(--map-card-manual-point-line-color, yellow);
@@ -1870,6 +1914,7 @@ export class XiaomiVacuumMapCard extends LitElement {
             ${ManualPoint.styles}
             ${PredefinedPoint.styles}
             ${Room.styles}
+            ${ValetudoMarkerIcon.styles}
             ${IconsWrapper.styles}
             ${TilesWrapper.styles}
             ${DropdownMenu.styles}

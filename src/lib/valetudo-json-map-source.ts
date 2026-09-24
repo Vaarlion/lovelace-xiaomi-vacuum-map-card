@@ -56,17 +56,23 @@ export interface ValetudoRenderOptions {
     wallColor?: string;
     segmentColors?: string[];
     pathColor?: string;
-    robotColor?: string;
-    chargerColor?: string;
-    goToTargetColor?: string;
     backgroundColor?: string;
     scale?: number;
+}
+
+/** Position in vacuum coordinates (mm), the same system as the calibration points. */
+export interface ValetudoMarker {
+    x: number;
+    y: number;
 }
 
 export interface ValetudoRenderResult {
     dataUrl: string;
     calibrationPoints: CalibrationPoint[];
     rooms: Record<string, MapExtractorRoom>;
+    robot?: ValetudoMarker;
+    charger?: ValetudoMarker;
+    goToTarget?: ValetudoMarker;
 }
 
 export interface ValetudoMapSnapshot {
@@ -80,9 +86,6 @@ const DEFAULT_OPTIONS: Required<ValetudoRenderOptions> = {
     wallColor: "#7B90A0",
     segmentColors: ["#19A1A1", "#7AC037", "#DF5618", "#F9A825", "#7D5BA6", "#4285F4", "#E91E63", "#00897B"],
     pathColor: "rgba(255,255,255,0.9)",
-    robotColor: "#03A9F4",
-    chargerColor: "#4CAF50",
-    goToTargetColor: "#2196F3",
     backgroundColor: "#15171B",
     scale: 3,
 };
@@ -192,21 +195,26 @@ function computeBoundingBox(data: ValetudoRawMapData): BoundingBox {
     return box;
 }
 
-function findEntity(data: ValetudoRawMapData, type: string): ValetudoRawMapEntity | undefined {
-    return data.entities.find(e => e.type === type);
+function findMarker(data: ValetudoRawMapData, type: string): ValetudoMarker | undefined {
+    const entity = data.entities.find(e => e.type === type);
+    if (!entity || entity.points.length < 2) {
+        return undefined;
+    }
+    return { x: entity.points[0], y: entity.points[1] };
 }
 
 /**
  * Renders a Valetudo RawMapData structure to a canvas (floor/walls/segments
- * as filled pixels, path as a line, robot/charger/go-to as dots) and returns
- * it as a data: URL, along with calibration points computed directly from
- * the map's own pixelSize/bounding box (so no manual calibration is needed)
- * and a `rooms` map compatible with this card's ROOM selection mode.
+ * as filled pixels, path as a line) and returns it as a data: URL, along with
+ * calibration points computed directly from the map's own pixelSize/bounding
+ * box (so no manual calibration is needed), a `rooms` map compatible with this
+ * card's ROOM selection mode, and robot/charger/go-to positions. Those are left
+ * off the bitmap so the card can draw them as fixed-size overlay icons.
  */
 export function renderValetudoMap(
     data: ValetudoRawMapData,
     options?: ValetudoRenderOptions,
-): { dataUrl: string; calibrationPoints: CalibrationPoint[]; rooms: Record<string, MapExtractorRoom> } {
+): ValetudoRenderResult {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const box = computeBoundingBox(data);
     const padding = 2;
@@ -283,24 +291,6 @@ export function renderValetudoMap(
             ctx.stroke();
         });
 
-    const drawDot = (entityType: string, color: string, radius: number) => {
-        const entity = findEntity(data, entityType);
-        if (!entity || entity.points.length < 2) {
-            return;
-        }
-        const [x, y] = toGrid(entity.points[0], entity.points[1]);
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(x, y, radius * opts.scale, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = "#ffffff";
-        ctx.stroke();
-    };
-    drawDot("go_to_target", opts.goToTargetColor, 1.5);
-    drawDot("charger_location", opts.chargerColor, 1.5);
-    drawDot("robot_position", opts.robotColor, 2);
-
     // Calibration: 3 points, computed directly from pixelSize - no manual entry needed.
     // Grid (canvas, pre-scale) point (gx, gy) <-> vacuum mm point (mmX, mmY):
     //   mmX = (gx + offsetX) * pixelSize ; mmY = (gy + offsetY) * pixelSize
@@ -322,7 +312,14 @@ export function renderValetudoMap(
         vacuum: gridToVacuum(gx, gy),
     }));
 
-    return { dataUrl: canvas.toDataURL("image/png"), calibrationPoints, rooms };
+    return {
+        dataUrl: canvas.toDataURL("image/png"),
+        calibrationPoints,
+        rooms,
+        robot: findMarker(data, "robot_position"),
+        charger: findMarker(data, "charger_location"),
+        goToTarget: findMarker(data, "go_to_target"),
+    };
 }
 
 /**
