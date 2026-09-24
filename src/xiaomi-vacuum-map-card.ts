@@ -342,7 +342,9 @@ export class XiaomiVacuumMapCard extends LitElement {
             </div>
         `;
         return html`
-            <ha-card style="--map-scale: ${this.mapScale}; --real-scale: ${this.realScale};">
+            <ha-card
+                class="${preset.map_source.valetudo_json ? "valetudo-map" : ""}"
+                style="--map-scale: ${this.mapScale}; --real-scale: ${this.realScale};">
                 ${conditional(
                     (this.config.title ?? "").length > 0,
                     () => html`<h1 class="card-header">${this.config.title}</h1>`,
@@ -1477,6 +1479,17 @@ export class XiaomiVacuumMapCard extends LitElement {
 
     static get styles(): CSSResultGroup {
         return css`
+            /* The rendered Valetudo map is dark and multicoloured, where the default dark label text vanishes. */
+            ha-card.valetudo-map {
+                --map-card-internal-room-label-color: var(--map-card-room-label-color, #ffffff);
+                --map-card-internal-room-label-color-selected: var(--map-card-room-label-color-selected, #ffffff);
+                --map-card-internal-room-label-outline-color: var(
+                    --map-card-room-label-outline-color,
+                    rgba(0, 0, 0, 0.85)
+                );
+                --map-card-internal-room-label-outline-width: var(--map-card-room-label-outline-width, 3px);
+            }
+
             ha-card {
                 overflow: hidden;
                 display: flow-root;
@@ -1773,6 +1786,8 @@ export class XiaomiVacuumMapCard extends LitElement {
                     var(--map-card-internal-primary-text-color)
                 );
                 --map-card-internal-room-label-font-size: var(--map-card-room-label-font-size, 12px);
+                --map-card-internal-room-label-outline-color: var(--map-card-room-label-outline-color, transparent);
+                --map-card-internal-room-label-outline-width: var(--map-card-room-label-outline-width, 0px);
                 --map-card-internal-toast-successful-icon-color: var(
                     --map-card-toast-successful-icon-color,
                     rgb(0, 255, 0)
