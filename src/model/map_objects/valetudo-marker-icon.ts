@@ -1,5 +1,5 @@
 // noinspection CssUnresolvedCustomProperty
-import { css, CSSResultGroup, SVGTemplateResult } from "lit";
+import { css, CSSResultGroup, svg, SVGTemplateResult } from "lit";
 
 import { Context } from "./context";
 import { MapObject } from "./map-object";
@@ -19,11 +19,20 @@ export class ValetudoMarkerIcon extends MapObject {
     }
 
     public render(): SVGTemplateResult {
-        return this.renderIcon(
-            { x: this._marker.x, y: this._marker.y, name: ICONS[this._kind] },
-            () => undefined,
-            `valetudo-marker valetudo-marker-${this._kind}`,
-        );
+        const [x, y] = this.vacuumToScaledMap(this._marker.x, this._marker.y);
+        return svg`
+            <foreignObject class="icon-foreign-object"
+                           style="--x-icon: ${x}px; --y-icon: ${y}px;"
+                           x="${x}px" y="${y}px" width="36px" height="36px">
+                <body xmlns="http://www.w3.org/1999/xhtml">
+                    <div class="map-icon-wrapper valetudo-marker valetudo-marker-${this._kind}">
+                        <ha-icon icon="${ICONS[this._kind]}"
+                                 style="background: transparent; transform: rotate(${this._marker.angle ?? 0}deg);">
+                        </ha-icon>
+                    </div>
+                </body>
+            </foreignObject>
+        `;
     }
 
     public static get styles(): CSSResultGroup {

@@ -64,6 +64,8 @@ export interface ValetudoRenderOptions {
 export interface ValetudoMarker {
     x: number;
     y: number;
+    /** Degrees clockwise; 0 means the icon as drawn (same convention as Hypfer/lovelace-valetudo-map-card). */
+    angle?: number;
 }
 
 export interface ValetudoRenderResult {
@@ -267,7 +269,7 @@ function findMarker(data: ValetudoRawMapData, type: string): ValetudoMarker | un
     if (!entity || entity.points.length < 2) {
         return undefined;
     }
-    return { x: entity.points[0], y: entity.points[1] };
+    return { x: entity.points[0], y: entity.points[1], angle: entity.metaData?.angle };
 }
 
 /**
