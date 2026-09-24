@@ -68,6 +68,8 @@ In this mode:
 * no-go areas, no-mop areas, virtual walls and the zone being cleaned are drawn by default; carpets can be added, and any of them removed, with `map_source.valetudo_json_layers`,
 * the map is refreshed every 3 s while cleaning or returning, 15 s while paused and 2 min otherwise.
 
+The visual editor configures it too: with the Hypfer/Valetudo platform selected, pick the map camera (the "Render map from Valetudo map data" switch turns on automatically), choose the map layers and fill in the MQTT topic prefix.
+
 ## Retrieving map image
 
 Alternatively, to retrieve a pre-rendered map image you have to use [MQTT Vacuum Camera](https://github.com/sca075/mqtt_vacuum_camera/) custom integration made by [@sca075](https://github.com/sca075) (recommended; supports auto-calibration) or [I can't believe it's not Valetudo](https://github.com/Hypfer/Icantbelieveitsnotvaletudo) (not recommended; manual calibration required).
